@@ -6,21 +6,22 @@ import logging
 import PyPDF2
 import re
 #import sys
+import threading
 import time
 import unicodedata
 
 # http://127.0.0.1:8080/ 
 server_name = "localhost"
 server_port = 8080
-glob_text_map = {}
+glob_text_map = {} # TODO: Wann löschen?
+counter = 0
+lock_counter = threading.Lock()
 
 # Wie Infos übergene?
 # - Javascript -> Python
 # - Python -> Javascript
 # pdf und query herunterladen
 # txt zurück senden
-
-# TODO: Wie PDF namen bekommen?
 
 # TODO: Was is mit PDF Datein, welche Bilder beinhalten?
 
@@ -52,8 +53,9 @@ def extractText(document):
   pdf_reader = PyPDF2.PdfReader(buffer_reader) # open a document
   
   i = 0
-  while i <= len(pdf_reader.pages):
-    text = pdf_reader.pages[0].extract_text()
+  while i < len(pdf_reader.pages):
+    # logging.info("Current page: %d", i)
+    text = pdf_reader.pages[i].extract_text()
     cleaned_text = cleaned_text + '' + text
     i += 1
 
@@ -63,12 +65,13 @@ def extractText(document):
 # search_terms ... list with all the user specified searchterms
 # text ... string with the text to be procesed
 ##
-def searchWord(search_terms, text):
+def stopWords(search_terms, text):
 
   stop_words = open("stop_words_edited.txt").read().split()
   
   # Check if user specified term is a stopword
-  stop_words = list(filter(lambda l: l not in search_terms, stop_words))
+  if search_terms:
+    stop_words = list(filter(lambda l: l not in search_terms, stop_words))
   
   # Filter out unwanted words
   filtered = list(filter(lambda l: l not in stop_words, text.split()))
@@ -90,7 +93,7 @@ class Server(BaseHTTPRequestHandler):
     # GET
     elif(response_type == 'GET'):
       self.send_response(200)
-      self.send_header('Content-type', 'text/html')
+      self.send_header('Content-type', 'text/encoding=utf-8')
       self.end_headers()
     # Unintended request
     else:
@@ -101,46 +104,54 @@ class Server(BaseHTTPRequestHandler):
       self.wfile.write(bytes("<p>Could not resolve request.</p>", "utf-8"))
       self.wfile.write(bytes("</body></html>", "utf-8"))
 
+  # TODO: Check userinput for correctness
   def do_GET(self):
     logging.info("GET request,\nPath: %s\nHeaders:\n%s\n", str(self.path), str(self.headers))
     
+    # Extract info from header
     content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
     get_data = self.rfile.read(content_length) # <--- Gets the data itself
     #logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",str(self.path), str(self.headers), get_data)
+    json_info = json.loads(get_data)
+
+    # Get proccesed text from storage
+    response = stopWords([],glob_text_map[int(json_info['UID'])]) # TODO: Get user specified serach terms
     
-    json_info = json.dumps(get_data.decode('utf-8'))
-    print(json_info)
-    
-    response = "TO BE IMPLEMENTED GET REQUEST"
-    
-    # Extract text from the pdf
-    # retval = glob_text_map[UID]
-    # print(retval)
-    
+    # Prepear header and payload
     self._set_header('GET', len(response))
     self.wfile.write(bytes(response, "utf-8"))
+    
     logging.info("Get request finished\n")
 
+  # TODO: Check userinput for correctness
   def do_POST(self):
     logging.info("POST request,\nPath: %s\nHeaders:\n%s\n", str(self.path), str(self.headers))
     
+    # Extract info from header
     content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
     post_data = self.rfile.read(content_length) # <--- Gets the data itself
     #logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",str(self.path), str(self.headers), get_data)
     
-    
-    UID = time.time() # TODO: "Unique" ID for request (+ Atomic countery?)
+    # Generate UID and timestamp
+    lock_counter.acquire()
+    counter += 1
+    UID = int(time.time() + counter)
+    lock_counter.release()
     timestamp = time.time()
     
+    # Procces pdf
+    procced_text = eliminateCharacters(extractText(post_data))
+    
     # Map Uid to pdf name
-    procced_text = extractText(post_data)
     glob_text_map[UID] = procced_text
-    name = "TO BE EXTRATEC?"
+    name = "TO BE EXTRATEC?" # TODO: Get pdf name
     #response = "{ \"{UID}\":\"%d\", \"{name}\":\"%s\", \"{timestamp}\":\"%s\"} " % (UID, name, str(timestamp))
     response  = json.dumps({ "UID" : str(UID), "name" : name, "timestamp" : str(timestamp)})
     
+    # Prepear header and payload
     self._set_header('POST', len(response))  
     self.wfile.write(bytes(response, "utf-8"))
+    
     logging.info("POST request finished\n")
 
 ################################### "Main" ####################################
@@ -150,13 +161,12 @@ class Server(BaseHTTPRequestHandler):
 #search_terms = ["enough", "if", "us"]
 #text = extractText("test_data/Simple_text.pdf")
 # print(text)
-#filtered = searchWord(search_terms, text)
+#filtered = stopWords(search_terms, text)
 #print(filtered)
 # Write result to .txt
 #out = open("output.txt", "wb") # create a text output
 #out.write(bytes(filtered, "utf8")) # write text of page
 #out.close()
-
 
 webserver = HTTPServer((server_name, server_port), Server)
 print(webserver)
