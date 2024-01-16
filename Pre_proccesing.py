@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import unicodedata
+from urllib.parse import urlparse
 
 # http://127.0.0.1:8080/ 
 server_name = "localhost"
@@ -83,6 +84,12 @@ def stopWords(search_terms, text):
   
 ################################### Server ####################################
 class Server(BaseHTTPRequestHandler):
+  def end_headers(self):
+      self.send_header('Access-Control-Allow-Origin', '*')
+      self.send_header('Access-Control-Allow-Methods', 'GET')
+      self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+      return super(Server, self).end_headers()
+
   def _set_header(self, response_type, msg_len):
     # POST
     if(response_type == 'POST'):
@@ -109,19 +116,29 @@ class Server(BaseHTTPRequestHandler):
     logging.info("GET request,\nPath: %s\nHeaders:\n%s\n", str(self.path), str(self.headers))
     
     # Extract info from header
-    content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
-    get_data = self.rfile.read(content_length) # <--- Gets the data itself
+    #content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
+    #get_data = self.rfile.read(content_length) # <--- Gets the data itself
+    query = urlparse(self.path).query
+    query_components = dict(qc.split("=") for qc in query.split("&"))
     #logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",str(self.path), str(self.headers), get_data)
-    json_info = json.loads(get_data)
-
+    #json_info = json.loads(get_data)
+    UID = query_components["UID"]
     # Get proccesed text from storage
-    response = stopWords([],glob_text_map[int(json_info['UID'])]) # TODO: Get user specified serach terms
+    response =  json.dumps({ "text" : stopWords([],glob_text_map[int(UID)])}) # TODO: Get user specified serach terms
     
     # Prepear header and payload
     self._set_header('GET', len(response))
     self.wfile.write(bytes(response, "utf-8"))
     
     logging.info("Get request finished\n")
+
+  def do_OPTIONS(self):
+    self.send_response(200, "ok")
+    self.send_header('Access-Control-Allow-Origin', '*')
+    self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS, POST')
+    self.send_header("Access-Control-Allow-Headers", "X-Requested-With")
+    self.send_header("Access-Control-Allow-Headers", "Content-Type")
+    self.end_headers()
 
   # TODO: Check userinput for correctness
   def do_POST(self):
