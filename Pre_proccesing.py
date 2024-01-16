@@ -125,6 +125,7 @@ class Server(BaseHTTPRequestHandler):
 
   # TODO: Check userinput for correctness
   def do_POST(self):
+    global counter
     logging.info("POST request,\nPath: %s\nHeaders:\n%s\n", str(self.path), str(self.headers))
     
     # Extract info from header
