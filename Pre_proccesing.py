@@ -2,10 +2,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
 import json
 import logging
-#import pandas as pd
 import PyPDF2
 import re
-#import sys
 import threading
 import time
 import unicodedata
@@ -50,16 +48,21 @@ def eliminateCharacters(text):
 ##
 def extractText(document):
   cleaned_text = ""
+  # logging.info("Send Text via POST: %s", document)
   buffer_reader = io.BytesIO(document)
   pdf_reader = PyPDF2.PdfReader(buffer_reader) # open a document
   
+  #out = open("Text.txt", "wb") # create a text output
+
   i = 0
   while i < len(pdf_reader.pages):
     # logging.info("Current page: %d", i)
     text = pdf_reader.pages[i].extract_text()
+   #out.write(bytes(text, "utf8")) # write text of page
     cleaned_text = cleaned_text + '' + text
     i += 1
 
+  #out.close()
   return cleaned_text
 
 ##
@@ -116,13 +119,11 @@ class Server(BaseHTTPRequestHandler):
     logging.info("GET request,\nPath: %s\nHeaders:\n%s\n", str(self.path), str(self.headers))
     
     # Extract info from header
-    #content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
-    #get_data = self.rfile.read(content_length) # <--- Gets the data itself
     query = urlparse(self.path).query
     query_components = dict(qc.split("=") for qc in query.split("&"))
     #logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",str(self.path), str(self.headers), get_data)
-    #json_info = json.loads(get_data)
     UID = query_components["UID"]
+
     # Get proccesed text from storage
     response =  json.dumps({ "text" : stopWords([],glob_text_map[int(UID)])}) # TODO: Get user specified serach terms
     
@@ -148,7 +149,14 @@ class Server(BaseHTTPRequestHandler):
     # Extract info from header
     content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
     post_data = self.rfile.read(content_length) # <--- Gets the data itself
-    #logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",str(self.path), str(self.headers), get_data)
+    #logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",str(self.path), str(self.headers), post_data)
+    
+    # Get Filename
+    query = urlparse(self.path).query
+    #logging.info("Query: %s", query)
+    query_components = dict(qc.split("=") for qc in query.split("&"))
+    #logging.info("Query_components: %s", query_components)
+    filename = query_components["filename"]
     
     # Generate UID and timestamp
     lock_counter.acquire()
@@ -158,13 +166,13 @@ class Server(BaseHTTPRequestHandler):
     timestamp = time.time()
     
     # Procces pdf
-    procced_text = eliminateCharacters(extractText(post_data))
+    extracted_text = extractText(post_data)
+    procced_text = eliminateCharacters(extracted_text)
     
     # Map Uid to pdf name
     glob_text_map[UID] = procced_text
-    name = "TO BE EXTRATEC?" # TODO: Get pdf name
     #response = "{ \"{UID}\":\"%d\", \"{name}\":\"%s\", \"{timestamp}\":\"%s\"} " % (UID, name, str(timestamp))
-    response  = json.dumps({ "UID" : str(UID), "name" : name, "timestamp" : str(timestamp)})
+    response  = json.dumps({ "UID" : str(UID), "name" : filename, "timestamp" : str(timestamp)})
     
     # Prepear header and payload
     self._set_header('POST', len(response))  
