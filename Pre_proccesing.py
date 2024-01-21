@@ -71,7 +71,7 @@ def extractText(document):
 ##
 def stopWords(search_terms, text):
 
-  stop_words = open("stop_words_edited.txt").read().split()
+  stop_words = ''#open("stop_words_edited.txt").read().split()
   
   # Check if user specified term is a stopword
   if search_terms:
